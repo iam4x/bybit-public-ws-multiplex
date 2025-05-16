@@ -35,6 +35,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "pino": "^9.6.0",
     "sturdy-websocket": "^0.2.1"
   }
 }
