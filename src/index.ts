@@ -6,16 +6,6 @@ const BYBIT_TOPICS_SNAPSHOTS: Record<string, any> = {};
 const CONNECTED_CLIENTS = new Set<string>();
 
 const bybitWs = new SturdyWebSocket("wss://stream.bybit.com/v5/public/linear");
-let pongReceived = true;
-let pongTimeout: NodeJS.Timeout | undefined;
-
-const resetPongTimeout = () => {
-  if (pongTimeout) clearTimeout(pongTimeout);
-  pongReceived = false;
-  pongTimeout = setTimeout(() => {
-    if (!pongReceived) bybitWs.reconnect();
-  }, 5000);
-};
 
 const unsubscribeBybit = (topics: string[]) => {
   const toUnsubscribe: string[] = [];
@@ -117,8 +107,18 @@ const server = serve<{ id: string; topics: string[] }, any>({
 });
 
 let bybitPingInterval: NodeJS.Timeout | undefined;
+let bybitPongReceived = true;
+let bybitPongTimeout: NodeJS.Timeout | undefined;
 
-bybitWs.addEventListener("open", () => {
+const resetPongTimeout = () => {
+  if (bybitPongTimeout) clearTimeout(bybitPongTimeout);
+  bybitPongReceived = false;
+  bybitPongTimeout = setTimeout(() => {
+    if (!bybitPongReceived) bybitWs.reconnect();
+  }, 5000);
+};
+
+const onOpen = () => {
   const topics = Object.keys(BYBIT_SUBSCRIBED_TOPICS);
 
   if (topics.length > 0) {
@@ -129,12 +129,34 @@ bybitWs.addEventListener("open", () => {
     bybitWs.send(JSON.stringify({ op: "ping" }));
     resetPongTimeout();
   }, 10_000);
-});
+};
+
+bybitWs.addEventListener("open", onOpen);
+bybitWs.addEventListener("reopen", onOpen);
+
+const onClose = () => {
+  Object.keys(BYBIT_TOPICS_SNAPSHOTS).forEach((topic) => {
+    delete BYBIT_TOPICS_SNAPSHOTS[topic];
+  });
+
+  if (bybitPingInterval) {
+    clearInterval(bybitPingInterval);
+    bybitPingInterval = undefined;
+  }
+
+  if (bybitPongTimeout) {
+    clearTimeout(bybitPongTimeout);
+    bybitPongTimeout = undefined;
+  }
+};
+
+bybitWs.addEventListener("close", onClose);
+bybitWs.addEventListener("down", onClose);
 
 bybitWs.addEventListener("message", (event) => {
   if (event.data.includes("pong")) {
-    pongReceived = true;
-    if (pongTimeout) clearTimeout(pongTimeout);
+    bybitPongReceived = true;
+    if (bybitPongTimeout) clearTimeout(bybitPongTimeout);
     return;
   }
 
@@ -184,21 +206,5 @@ bybitWs.addEventListener("message", (event) => {
     }
   } catch {
     // do nothing, we didnt receive JSON string
-  }
-});
-
-bybitWs.addEventListener("close", () => {
-  Object.keys(BYBIT_TOPICS_SNAPSHOTS).forEach((topic) => {
-    delete BYBIT_TOPICS_SNAPSHOTS[topic];
-  });
-
-  if (bybitPingInterval) {
-    clearInterval(bybitPingInterval);
-    bybitPingInterval = undefined;
-  }
-
-  if (pongTimeout) {
-    clearTimeout(pongTimeout);
-    pongTimeout = undefined;
   }
 });
