@@ -110,10 +110,11 @@ const server = serve<{ id: string; topics: string[] }, any>({
         if (data.op === "unsubscribe") {
           data.args.forEach((topic) => {
             ws.unsubscribe(topic);
-            ws.data.topics.splice(ws.data.topics.indexOf(topic), 1);
+            const idx = ws.data.topics.indexOf(topic);
+            if (idx !== -1) ws.data.topics.splice(idx, 1);
           });
 
-          setTimeout(() => unsubscribeBybit(data.args), 30_000);
+          unsubscribeBybit(data.args);
         }
       } catch {
         ws.send(JSON.stringify({ error: "Invalid message format" }));
@@ -134,15 +135,18 @@ const resetPongTimeout = () => {
   }, 5000);
 };
 
+const pingObString = `{"op":"ping"}`;
 const onOpen = () => {
   const topics = Object.keys(BYBIT_SUBSCRIBED_TOPICS);
 
   if (topics.length > 0) {
-    bybitWs.send(JSON.stringify({ op: "subscribe", args: topics }));
+    bybitWs.send(
+      `{"op":"subscribe","args":[${topics.map((t) => `"${t}"`).join(",")}]}`,
+    );
   }
 
   bybitPingInterval = setInterval(() => {
-    bybitWs.send(JSON.stringify({ op: "ping" }));
+    bybitWs.send(pingObString);
     resetPongTimeout();
   }, 10_000);
 };
@@ -163,6 +167,11 @@ const onClose = () => {
   if (bybitPongTimeout) {
     clearTimeout(bybitPongTimeout);
     bybitPongTimeout = undefined;
+  }
+
+  if (unsubscribeBybitTimeouts.length > 0) {
+    unsubscribeBybitTimeouts.forEach((timeout) => clearTimeout(timeout));
+    unsubscribeBybitTimeouts.length = 0;
   }
 };
 
