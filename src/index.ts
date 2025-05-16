@@ -172,7 +172,9 @@ bybitWs.addEventListener("message", (event) => {
       }
 
       if (data.topic.startsWith("tickers.") && data.type === "update") {
-        Object.assign(BYBIT_TOPICS_SNAPSHOTS[data.topic], data.data);
+        if (BYBIT_TOPICS_SNAPSHOTS[data.topic]) {
+          Object.assign(BYBIT_TOPICS_SNAPSHOTS[data.topic], data.data);
+        }
       }
 
       if (data.topic.startsWith("orderbook.") && data.type === "delta") {
