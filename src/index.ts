@@ -196,12 +196,14 @@ bybitWs.addEventListener("message", (event) => {
               return;
             }
 
-            if (amount === 0) {
+            if (index !== -1 && amount === 0) {
               snapshot[side].splice(index, 1);
               return;
             }
 
-            snapshot[side][index][1] = order[1];
+            if (index !== -1 && amount > 0) {
+              snapshot[side][index][1] = order[1];
+            }
           });
         });
       }
