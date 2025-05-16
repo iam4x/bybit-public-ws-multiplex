@@ -62,10 +62,13 @@ const server = serve<{ id: string; topics: string[] }, any>({
     },
     message(ws, message) {
       if (typeof message !== "string") {
+        logger.debug("Received non-string message");
+        logger.debug(typeof message);
         return;
       }
 
       if (message.includes('"ping"')) {
+        logger.debug(`Received ping from ${ws.data.id}`);
         const [, reqId] = /req_id=(\d+)/.exec(message) || [];
         ws.send(reqId ? `{"op":"pong","req_id":"${reqId}"}` : `{"op":"pong"}`);
         return;
@@ -76,6 +79,10 @@ const server = serve<{ id: string; topics: string[] }, any>({
           JSON.parse(message);
 
         if (data.op === "subscribe") {
+          logger.info(
+            `Client ${ws.data.id} subscribed to ${data.args.length} topics`,
+          );
+
           const toSubscribe: string[] = [];
 
           data.args.forEach((topic) => {
@@ -101,6 +108,7 @@ const server = serve<{ id: string; topics: string[] }, any>({
           });
 
           if (toSubscribe.length > 0 && bybitWs.readyState === WebSocket.OPEN) {
+            logger.info(`Subscribing to ${toSubscribe.length} Bybit topics`);
             bybitWs.send(
               JSON.stringify({ op: "subscribe", args: toSubscribe }),
             );
@@ -108,6 +116,10 @@ const server = serve<{ id: string; topics: string[] }, any>({
         }
 
         if (data.op === "unsubscribe") {
+          logger.info(
+            `Client ${ws.data.id} unsubscribed from ${data.args.length} topics`,
+          );
+
           data.args.forEach((topic) => {
             ws.unsubscribe(topic);
             const idx = ws.data.topics.indexOf(topic);
@@ -117,6 +129,8 @@ const server = serve<{ id: string; topics: string[] }, any>({
           unsubscribeBybit(data.args);
         }
       } catch {
+        logger.error(`Invalid message format from ${ws.data.id}`);
+        logger.debug(message);
         ws.send(JSON.stringify({ error: "Invalid message format" }));
       }
     },
@@ -155,6 +169,8 @@ bybitWs.addEventListener("open", onOpen);
 bybitWs.addEventListener("reopen", onOpen);
 
 const onClose = () => {
+  logger.warn(`Bybit connection closed`);
+
   Object.keys(BYBIT_TOPICS_SNAPSHOTS).forEach((topic) => {
     delete BYBIT_TOPICS_SNAPSHOTS[topic];
   });
@@ -235,5 +251,7 @@ bybitWs.addEventListener("message", (event) => {
     }
   } catch {
     // do nothing, we didnt receive JSON string
+    logger.debug("Received non-JSON message");
+    logger.debug(event.data);
   }
 });
