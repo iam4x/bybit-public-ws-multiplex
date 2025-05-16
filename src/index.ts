@@ -1,30 +1,40 @@
 import { randomUUIDv7, serve } from "bun";
 import SturdyWebSocket from "sturdy-websocket";
 
+import { logger } from "./logger";
+
 const BYBIT_SUBSCRIBED_TOPICS: Record<string, number> = {};
 const BYBIT_TOPICS_SNAPSHOTS: Record<string, any> = {};
 const CONNECTED_CLIENTS = new Set<string>();
 
 const bybitWs = new SturdyWebSocket("wss://stream.bybit.com/v5/public/linear");
 
+const unsubscribeBybitTimeouts: Array<NodeJS.Timeout> = [];
 const unsubscribeBybit = (topics: string[]) => {
-  const toUnsubscribe: string[] = [];
+  unsubscribeBybitTimeouts.push(
+    setTimeout(() => {
+      const toUnsubscribe: string[] = [];
 
-  topics.forEach((topic) => {
-    if (BYBIT_SUBSCRIBED_TOPICS[topic]) {
-      BYBIT_SUBSCRIBED_TOPICS[topic]--;
+      topics.forEach((topic) => {
+        if (BYBIT_SUBSCRIBED_TOPICS[topic]) {
+          BYBIT_SUBSCRIBED_TOPICS[topic]--;
 
-      if (BYBIT_SUBSCRIBED_TOPICS[topic] === 0) {
-        delete BYBIT_SUBSCRIBED_TOPICS[topic];
-        delete BYBIT_TOPICS_SNAPSHOTS[topic];
-        toUnsubscribe.push(topic);
+          if (BYBIT_SUBSCRIBED_TOPICS[topic] === 0) {
+            delete BYBIT_SUBSCRIBED_TOPICS[topic];
+            delete BYBIT_TOPICS_SNAPSHOTS[topic];
+            toUnsubscribe.push(topic);
+          }
+        }
+      });
+
+      if (toUnsubscribe.length > 0) {
+        logger.info(`Unsubscribing Bybit from ${toUnsubscribe.length} topics`);
+        bybitWs.send(
+          JSON.stringify({ op: "unsubscribe", args: toUnsubscribe }),
+        );
       }
-    }
-  });
-
-  if (toUnsubscribe.length > 0) {
-    bybitWs.send(JSON.stringify({ op: "unsubscribe", args: toUnsubscribe }));
-  }
+    }, 30_000),
+  );
 };
 
 const server = serve<{ id: string; topics: string[] }, any>({
@@ -43,21 +53,27 @@ const server = serve<{ id: string; topics: string[] }, any>({
   websocket: {
     open(ws) {
       CONNECTED_CLIENTS.add(ws.data.id);
+      logger.info(`Client connected: ${ws.data.id}`);
     },
     close(ws) {
       CONNECTED_CLIENTS.delete(ws.data.id);
-      setTimeout(() => unsubscribeBybit(ws.data.topics), 30_000);
+      logger.info(`Client disconnected: ${ws.data.id}`);
+      unsubscribeBybit(ws.data.topics);
     },
     message(ws, message) {
-      try {
-        const data: { op: string; args: string[]; req_id: string } = JSON.parse(
-          message as string,
-        );
+      if (typeof message !== "string") {
+        return;
+      }
 
-        if (data.op === "ping") {
-          ws.send(JSON.stringify({ op: "pong", req_id: data.req_id }));
-          return;
-        }
+      if (message.includes('"ping"')) {
+        const [, reqId] = /req_id=(\d+)/.exec(message) || [];
+        ws.send(reqId ? `{"op":"pong","req_id":"${reqId}"}` : `{"op":"pong"}`);
+        return;
+      }
+
+      try {
+        const data: { op: string; args: string[]; req_id: string } =
+          JSON.parse(message);
 
         if (data.op === "subscribe") {
           const toSubscribe: string[] = [];
