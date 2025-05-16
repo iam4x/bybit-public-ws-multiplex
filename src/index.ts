@@ -188,9 +188,7 @@ const onOpen = () => {
   const topics = Object.keys(BYBIT_SUBSCRIBED_TOPICS);
 
   if (topics.length > 0) {
-    bybitWs.send(
-      `{"op":"subscribe","args":[${topics.map((t) => `"${t}"`).join(",")}]}`,
-    );
+    bybitWs.send(JSON.stringify({ op: "subscribe", args: topics }));
   }
 
   bybitPingInterval = setInterval(() => {
