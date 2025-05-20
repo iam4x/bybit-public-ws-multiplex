@@ -162,9 +162,9 @@ bybitWs.addEventListener("reopen", onOpen);
 const onClose = () => {
   logger.warn(`Bybit connection closed`);
 
-  Object.keys(BYBIT_TOPICS_SNAPSHOTS).forEach((topic) => {
-    delete BYBIT_TOPICS_SNAPSHOTS[topic];
-  });
+  for (const key in BYBIT_TOPICS_SNAPSHOTS) {
+    delete BYBIT_TOPICS_SNAPSHOTS[key];
+  }
 
   if (bybitPingInterval) {
     clearInterval(bybitPingInterval);
@@ -187,8 +187,9 @@ const handleOrderBookUpdate = (data: Record<string, any>) => {
     string[][]
   >;
 
-  Object.entries(orderBook).forEach(([side, orders]) => {
-    if (side !== "a" && side !== "b") return;
+  for (const key in orderBook) {
+    const side = key as "a" | "b";
+    const orders = orderBook[side];
 
     orders.forEach((order) => {
       const index = snapshot[side].findIndex((o) => o[0] === order[0]);
@@ -208,7 +209,7 @@ const handleOrderBookUpdate = (data: Record<string, any>) => {
         snapshot[side][index][1] = order[1];
       }
     });
-  });
+  }
 };
 
 bybitWs.addEventListener("message", (event) => {
