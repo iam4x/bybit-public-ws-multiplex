@@ -142,40 +142,6 @@ const resetPongTimeout = () => {
   }, 5000);
 };
 
-let clearTickerUpdatesBacklogTimeout: NodeJS.Timeout | undefined;
-
-const clearTickerUpdatesBacklog = () => {
-  const toSend: Record<string, Record<string, any>> = {};
-
-  tickerUpdatesBacklog.forEach((update, idx) => {
-    if (toSend[update.data.symbol]) {
-      toSend[update.data.symbol].cs = update.data.cs;
-      toSend[update.data.symbol].ts = update.data.ts;
-      Object.assign(toSend[update.data.symbol].data, update.data);
-    } else {
-      toSend[update.data.symbol] = update;
-    }
-
-    // if the update is the last one for this symbol, we send it
-    if (tickerUpdatesBacklog.lastIndexOf(update) === idx) {
-      server.publish(update.topic, JSON.stringify(toSend[update.data.symbol]));
-    }
-  });
-
-  logger.debug(
-    `Cleared ${tickerUpdatesBacklog.length} backlog entries into ${Object.keys(toSend).length} updates`,
-  );
-
-  // clear backlog array
-  tickerUpdatesBacklog.length = 0;
-
-  // schedule ticker update in 50ms
-  clearTickerUpdatesBacklogTimeout = setTimeout(
-    () => clearTickerUpdatesBacklog(),
-    50,
-  );
-};
-
 const pingObString = `{"op":"ping"}`;
 const onOpen = () => {
   const topics = Object.keys(BYBIT_SUBSCRIBED_TOPICS);
@@ -188,11 +154,6 @@ const onOpen = () => {
     bybitWs.send(pingObString);
     resetPongTimeout();
   }, 10_000);
-
-  clearTickerUpdatesBacklogTimeout = setTimeout(
-    () => clearTickerUpdatesBacklog(),
-    50,
-  );
 };
 
 bybitWs.addEventListener("open", onOpen);
@@ -214,24 +175,10 @@ const onClose = () => {
     clearTimeout(bybitPongTimeout);
     bybitPongTimeout = undefined;
   }
-
-  if (clearTickerUpdatesBacklogTimeout) {
-    clearTimeout(clearTickerUpdatesBacklogTimeout);
-    clearTickerUpdatesBacklogTimeout = undefined;
-  }
 };
 
 bybitWs.addEventListener("close", onClose);
 bybitWs.addEventListener("down", onClose);
-
-const tickerUpdatesBacklog: Record<string, any>[] = [];
-const handleTickerUpdate = (data: Record<string, any>) => {
-  tickerUpdatesBacklog.push(data);
-
-  if (BYBIT_TOPICS_SNAPSHOTS[data.topic]) {
-    Object.assign(BYBIT_TOPICS_SNAPSHOTS[data.topic], data.data);
-  }
-};
 
 const handleOrderBookUpdate = (data: Record<string, any>) => {
   const orderBook = data.data as Record<string, string[][]>;
@@ -275,23 +222,23 @@ bybitWs.addEventListener("message", (event) => {
     const data = JSON.parse(event.data);
 
     if (typeof data.topic === "string") {
-      // receiving a tickers update, we will batch those in 50ms updates
-      if (data.topic.includes("tickers.") && data.type === "delta") {
-        handleTickerUpdate(data);
-        return;
-      }
+      // forward all bybit messages asap
+      server.publish(data.topic, event.data);
 
       // receiving a snapshot, we will store it in memory
       if (data.type === "snapshot") {
         BYBIT_TOPICS_SNAPSHOTS[data.topic] = data.data;
       }
+      // receiving a tickers updat
+      else if (data.topic.includes("tickers.") && data.type === "delta") {
+        if (BYBIT_TOPICS_SNAPSHOTS[data.topic]) {
+          Object.assign(BYBIT_TOPICS_SNAPSHOTS[data.topic], data.data);
+        }
+      }
       // receiving a orderbook delta, we will update the orderbook in memory
       else if (data.topic.includes("orderbook.") && data.type === "delta") {
         handleOrderBookUpdate(data);
       }
-
-      // forward all bybit messages that weren't caught before
-      server.publish(data.topic, event.data);
     }
   } catch {
     // do nothing, we didnt receive JSON string
