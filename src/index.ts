@@ -9,32 +9,25 @@ const CONNECTED_CLIENTS = new Set<string>();
 
 const bybitWs = new SturdyWebSocket("wss://stream.bybit.com/v5/public/linear");
 
-const unsubscribeBybitTimeouts: Array<NodeJS.Timeout> = [];
 const unsubscribeBybit = (topics: string[]) => {
-  unsubscribeBybitTimeouts.push(
-    setTimeout(() => {
-      const toUnsubscribe: string[] = [];
+  const toUnsubscribe: string[] = [];
 
-      topics.forEach((topic) => {
-        if (BYBIT_SUBSCRIBED_TOPICS[topic]) {
-          BYBIT_SUBSCRIBED_TOPICS[topic]--;
+  topics.forEach((topic) => {
+    if (BYBIT_SUBSCRIBED_TOPICS[topic]) {
+      BYBIT_SUBSCRIBED_TOPICS[topic]--;
 
-          if (BYBIT_SUBSCRIBED_TOPICS[topic] === 0) {
-            delete BYBIT_SUBSCRIBED_TOPICS[topic];
-            delete BYBIT_TOPICS_SNAPSHOTS[topic];
-            toUnsubscribe.push(topic);
-          }
-        }
-      });
-
-      if (toUnsubscribe.length > 0) {
-        logger.info(`Unsubscribing Bybit from ${toUnsubscribe.length} topics`);
-        bybitWs.send(
-          JSON.stringify({ op: "unsubscribe", args: toUnsubscribe }),
-        );
+      if (BYBIT_SUBSCRIBED_TOPICS[topic] === 0) {
+        delete BYBIT_SUBSCRIBED_TOPICS[topic];
+        delete BYBIT_TOPICS_SNAPSHOTS[topic];
+        toUnsubscribe.push(topic);
       }
-    }, 30_000),
-  );
+    }
+  });
+
+  if (toUnsubscribe.length > 0) {
+    logger.info(`Unsubscribing Bybit from ${toUnsubscribe.length} topics`);
+    bybitWs.send(JSON.stringify({ op: "unsubscribe", args: toUnsubscribe }));
+  }
 };
 
 const server = serve<{ id: string; topics: string[] }, any>({
@@ -220,11 +213,6 @@ const onClose = () => {
   if (bybitPongTimeout) {
     clearTimeout(bybitPongTimeout);
     bybitPongTimeout = undefined;
-  }
-
-  if (unsubscribeBybitTimeouts.length > 0) {
-    unsubscribeBybitTimeouts.forEach((timeout) => clearTimeout(timeout));
-    unsubscribeBybitTimeouts.length = 0;
   }
 
   if (clearTickerUpdatesBacklogTimeout) {
