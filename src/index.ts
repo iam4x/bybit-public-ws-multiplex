@@ -44,7 +44,7 @@ const server = serve<{ id: string; topics: string[] }, any>({
     "/*": new Response("Not Found", { status: 404 }),
   },
   websocket: {
-    idleTimeout: 30_000,
+    idleTimeout: 30,
     open(ws) {
       CONNECTED_CLIENTS.add(ws.data.id);
       logger.info(`Client connected: ${ws.data.id}`);
